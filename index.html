@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Calibro - 簡易騒音計</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0b0e11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Calibro">
+<style>
+  :root{
+    --bg: #0b0e11;
+    --panel: #14181d;
+    --panel-edge: #21262d;
+    --text-dim: #6b7680;
+    --text: #d8dee4;
+    --lcd: #d7ffe9;
+    --lcd-dim: #6fa98a;
+    --accent: #ffb02e;
+    --danger: #ff4d4f;
+    --ok: #3ddc84;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    overscroll-behavior: none;
+  }
+  #app{
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  }
+  header{
+    padding: 6px 2px 16px;
+  }
+  .brand{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-icon{
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px rgba(255,176,46,0.25));
+  }
+  .brand-text h1{
+    font-size: 23px;
+    font-weight: 800;
+    margin: 0;
+    color: var(--lcd);
+    letter-spacing: 0.01em;
+    text-shadow: 0 0 16px rgba(215,255,233,0.18);
+  }
+  header .sub{
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .meter-panel{
+    background: linear-gradient(180deg, var(--panel), #101317);
+    border: 1px solid var(--panel-edge);
+    border-radius: 14px;
+    padding: 22px 18px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .meter-panel::before{
+    content:"";
+    position:absolute; inset:0;
+    background: radial-gradient(120% 80% at 50% -20%, rgba(255,255,255,0.04), transparent 60%);
+    pointer-events:none;
+  }
+
+  .clip-flag{
+    position:absolute;
+    bottom: 12px; right: 14px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--panel-edge);
+    transition: all 0.15s ease;
+  }
+  .clip-flag.active{
+    color: #2a0000;
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .fullscreen-btn{
+    position:absolute;
+    top: 12px; right: 14px;
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .fullscreen-exit-btn{
+    display: none;
+    position: fixed;
+    top: 16px; right: 16px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(20,24,29,0.75);
+    border: 1px solid var(--panel-edge);
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 2100;
+    align-items: center;
+    justify-content: center;
+  }
+  .fullscreen-rotate-btn{
+    display: none;
+    position: fixed;
+    top: 16px; left: 16px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(20,24,29,0.75);
+    border: 1px solid var(--panel-edge);
+    color: var(--text-dim);
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 2100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  body.fullscreen-mode #app > *:not(.meter-panel){
+    display: none !important;
+  }
+  body.fullscreen-mode .meter-panel{
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+  }
+  body.fullscreen-mode .meter-panel::before{ display: none; }
+  body.fullscreen-mode .clip-flag,
+  body.fullscreen-mode .fullscreen-btn{ display: none; }
+  body.fullscreen-mode .fullscreen-exit-btn,
+  body.fullscreen-mode .fullscreen-rotate-btn{ display: flex; }
+  body.fullscreen-mode .db-value{ font-size: min(30vw, 42vh); }
+  body.fullscreen-mode .db-unit-inline{ font-size: min(8vw, 11vh); }
+  body.fullscreen-mode.rotated .meter-content{ transform: rotate(90deg); }
+  body.fullscreen-mode.rotated .db-value{ font-size: min(30vh, 42vw); }
+  body.fullscreen-mode.rotated .db-unit-inline{ font-size: min(8vh, 11vw); }
+
+  .meter-label{
+    text-align: left;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.08em;
+    padding-left: 2px;
+  }
+  body.fullscreen-mode .meter-label{
+    text-align: center;
+    font-size: 18px;
+    padding-left: 0;
+  }
+
+  .db-readout{
+    text-align: center;
+    padding: 6px 0 4px;
+  }
+  .db-value{
+    font-family: "SF Mono","Roboto Mono","Consolas",ui-monospace,monospace;
+    font-size: 76px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--lcd-dim);
+    letter-spacing: -0.02em;
+    transition: color 0.08s linear;
+    font-variant-numeric: tabular-nums;
+  }
+  .db-value.live{ color: var(--lcd); text-shadow: 0 0 18px rgba(215,255,233,0.25); }
+  .db-unit-inline{
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+    margin-left: 4px;
+  }
+
+  .stats-row{
+    display:flex;
+    gap: 8px;
+    margin-top: 10px;
+    opacity: 0.6;
+  }
+  .stat-box{
+    flex:1;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    padding: 6px 10px;
+    text-align:center;
+  }
+  .stat-box .label{
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    margin-bottom: 1px;
+  }
+  .stat-box .value{
+    font-family: "SF Mono","Roboto Mono",monospace;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .controls{
+    display:flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  button{
+    flex:1;
+    padding: 13px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.05s ease, background 0.15s ease;
+  }
+  button:active{ transform: scale(0.97); }
+  button.primary{
+    background: var(--ok);
+    border-color: var(--ok);
+    color: #06210f;
+  }
+  button.danger{
+    background: transparent;
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  button:disabled{
+    opacity: 0.35;
+    pointer-events: none;
+  }
+  .stats-reset-btn{
+    width: 40px;
+    flex: 0 0 40px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .stats-reset-btn:active{ transform: scale(0.94); }
+
+  .seg-toggle{
+    display:flex;
+    background:#1c2127;
+    border:1px solid var(--panel-edge);
+    border-radius:8px;
+    padding:2px;
+    gap:2px;
+  }
+  .seg-btn{
+    flex:1;
+    min-width:42px;
+    padding:7px 16px;
+    margin:0;
+    border:none;
+    border-radius:6px;
+    background:transparent;
+    color: var(--text-dim);
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .seg-btn.active{
+    background: var(--ok);
+    color: #06210f;
+  }
+
+  .settings{
+    margin-top: 18px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .settings .row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    font-size: 14.5px;
+  }
+  .settings .row + .row{ margin-top: 10px; }
+  select{
+    background: #1c2127;
+    color: var(--text);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 14.5px;
+  }
+
+  .calib-panel{
+    margin-top: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .calib-title{
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .calib-hint{
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .calib-apply-btn{
+    width: 100%;
+    margin-top: 12px;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid var(--ok);
+    background: var(--ok);
+    color: #06210f;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .calib-apply-btn:active{ transform: scale(0.98); }
+  .calib-apply-btn.subtle{
+    background: transparent;
+    border-color: var(--panel-edge);
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .calib-status{
+    margin-top: 8px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .modal-overlay{
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  .modal-box{
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 16px;
+    padding: 22px 20px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .modal-header{
+    display:flex;
+    justify-content: space-between;
+    align-items:center;
+    margin-bottom: 14px;
+  }
+  .modal-progress{
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .modal-close-btn{
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .modal-freq{
+    font-size: 38px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--lcd);
+    margin-bottom: 14px;
+    font-family: "SF Mono","Roboto Mono",monospace;
+  }
+  .modal-raw-row{
+    display:flex;
+    justify-content: space-between;
+    align-items:center;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: #1c2127;
+    border-radius: 8px;
+  }
+  .modal-raw-row span:last-child{
+    color: var(--text);
+    font-family: "SF Mono","Roboto Mono",monospace;
+    font-weight: 700;
+    font-size: 15.5px;
+  }
+  .modal-input-label{
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .modal-input{
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px;
+    font-size: 24px;
+    text-align: center;
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    background: #1c2127;
+    color: var(--text);
+    font-family: "SF Mono","Roboto Mono",monospace;
+    margin-bottom: 16px;
+  }
+  .modal-btn-row{
+    display:flex;
+    gap: 10px;
+  }
+  .modal-btn{
+    flex:1;
+    padding: 13px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    color: var(--text);
+  }
+  .modal-btn:active{ transform: scale(0.97); }
+  .modal-btn.primary{
+    background: var(--ok);
+    border-color: var(--ok);
+    color: #06210f;
+  }
+  .modal-btn:disabled{
+    opacity: 0.3;
+    pointer-events:none;
+  }
+  .modal-error{
+    font-size: 12.5px;
+    color: var(--danger);
+    text-align:center;
+    margin-top: 10px;
+    min-height: 14px;
+  }
+
+  .octave-panel{
+    margin-top: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    padding: 12px 10px 8px;
+  }
+  .octave-title-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .octave-title{
+    font-size: 13px;
+    color: var(--text-dim);
+    padding-left: 2px;
+  }
+  .nc-badge{
+    font-family: "SF Mono","Roboto Mono",monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    padding: 1px 6px;
+  }
+  .octave-panel svg{
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .octave-readout{
+    font-family: "SF Mono","Roboto Mono",monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--lcd);
+    text-align: center;
+    margin-bottom: 4px;
+    min-height: 18px;
+    letter-spacing: 0.02em;
+  }
+  .octave-note{
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .error-box{
+    margin-top: 12px;
+    background: rgba(255,77,79,0.08);
+    border: 1px solid rgba(255,77,79,0.4);
+    color: #ff8a8c;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    display:none;
+  }
+  .error-box.show{ display:block; }
+
+  footer{
+    margin-top: auto;
+    padding-top: 18px;
+    font-size: 11.5px;
+    color: #4a525a;
+    text-align:center;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 40 40" width="40" height="40">
+        <rect x="1" y="1" width="38" height="38" rx="10" fill="url(#iconBg)" stroke="#21262d" stroke-width="1"></rect>
+        <path d="M 6.84 20.21 A 14 14 0 0 1 33.16 20.21" fill="none" stroke="#3a4450" stroke-width="2" stroke-linecap="round"></path>
+        <line x1="4.96" y1="19.53" x2="9.66" y2="21.24" stroke="#3a4450" stroke-width="1.4" stroke-linecap="round"></line>
+        <line x1="10.82" y1="11.89" x2="13.69" y2="15.99" stroke="#3a4450" stroke-width="1.4" stroke-linecap="round"></line>
+        <line x1="20" y1="9" x2="20" y2="14" stroke="#3a4450" stroke-width="1.4" stroke-linecap="round"></line>
+        <line x1="29.18" y1="11.89" x2="26.31" y2="15.99" stroke="#3a4450" stroke-width="1.4" stroke-linecap="round"></line>
+        <line x1="35.04" y1="19.53" x2="30.34" y2="21.24" stroke="#3a4450" stroke-width="1.4" stroke-linecap="round"></line>
+        <line x1="20" y1="25" x2="22.54" y2="14.81" stroke="#ffb02e" stroke-width="2" stroke-linecap="round"></line>
+        <circle cx="20" cy="25" r="2.4" fill="#ffb02e"></circle>
+        <defs>
+          <linearGradient id="iconBg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#181d23"></stop>
+            <stop offset="1" stop-color="#0e1115"></stop>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="brand-text">
+        <h1>Calibro</h1>
+        <div class="sub">基準器に校正してから使う、簡易騒音計</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="meter-panel">
+    <button type="button" class="fullscreen-btn" id="fullscreenBtn" title="全画面表示">⛶</button>
+    <button type="button" class="fullscreen-exit-btn" id="fullscreenExitBtn" title="全画面解除">✕</button>
+    <button type="button" class="fullscreen-rotate-btn" id="fullscreenRotateBtn" title="90度回転">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="1" y="5" width="6" height="13" rx="1.4"></rect>
+        <rect x="14" y="7.5" width="9" height="8" rx="1.4"></rect>
+        <path d="M8.5 12 L13 12"></path>
+        <path d="M13 12 L10.7 9.8 M13 12 L10.7 14.2"></path>
+      </svg>
+    </button>
+    <div class="clip-flag" id="clipFlag">CLIP</div>
+    <div class="meter-content" id="meterContent">
+      <div class="meter-label">騒音レベル</div>
+      <div class="db-readout" id="dbReadout">
+        <span class="db-value" id="dbValue">--.-</span><span class="db-unit-inline" id="dbUnitLabel">dB(A)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="octave-panel">
+    <div class="octave-title-row">
+      <div class="octave-title">1/1オクターブバンド (IEC 61260, 63Hz〜8kHz)</div>
+      <div class="nc-badge" id="ncBadge" style="display:none;">NC--</div>
+    </div>
+    <div class="octave-readout" id="octaveSelectedLabel">タップしてバンドを選択</div>
+    <svg id="octaveSvg" viewBox="0 0 320 170" preserveAspectRatio="xMidYMid meet">
+      <line x1="4" y1="146" x2="316" y2="146" stroke="#21262d" stroke-width="1"></line>
+    </svg>
+    <div class="octave-note">63Hzはマイク特性上、低信頼の参考値です</div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="label">MAX</div>
+      <div class="value" id="maxVal">--.-</div>
+    </div>
+    <div class="stat-box">
+      <div class="label">MIN</div>
+      <div class="value" id="minVal">--.-</div>
+    </div>
+    <button type="button" class="stats-reset-btn" id="resetBtn" title="MAX/MINをリセット">↺</button>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">マイク開始</button>
+    <button class="danger" id="stopBtn" disabled>停止</button>
+  </div>
+
+  <div class="settings">
+    <div class="row">
+      <span>周波数重み付け</span>
+      <div class="seg-toggle" id="freqWeightingToggle">
+        <button type="button" class="seg-btn" data-value="Z">Z</button>
+        <button type="button" class="seg-btn active" data-value="A">A</button>
+        <button type="button" class="seg-btn" data-value="C">C</button>
+      </div>
+    </div>
+    <div class="row">
+      <span>時間重み付け</span>
+      <select id="weighting">
+        <option value="fast" selected>Fast (125ms)</option>
+        <option value="slow">Slow (1000ms)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="calib-panel">
+    <div class="calib-title">バンド校正(63Hz〜8kHz)</div>
+    <div class="calib-hint">校正元の騒音計と同時に「停止」して、保持された値で校正してください</div>
+    <div class="calib-status" id="calibSummary">未校正</div>
+    <button type="button" class="calib-apply-btn" id="calibStartBtn">校正を開始する</button>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <footer>
+    スマホマイクは未校正・周波数特性が機種依存です。<br>
+    法定/契約上の正式測定には使用できません。<br>
+    バンド校正は、校正元の騒音計と並べて実施してください。
+  </footer>
+
+</div>
+
+<div class="modal-overlay" id="calibModal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-progress" id="calibModalProgress">1 / 8</span>
+      <button type="button" class="modal-close-btn" id="calibModalClose">✕</button>
+    </div>
+    <div class="modal-freq" id="calibModalFreq">63Hz</div>
+    <div class="modal-raw-row">
+      <span>このアプリの保持値(dBFS)</span>
+      <span id="calibModalRaw">--.-</span>
+    </div>
+    <div class="modal-input-label">校正元の騒音計の読み値(dB)</div>
+    <input type="number" class="modal-input" id="calibModalInput" step="0.1" inputmode="decimal" placeholder="例: 45.0">
+    <div class="modal-btn-row">
+      <button type="button" class="modal-btn" id="calibModalPrev">戻る</button>
+      <button type="button" class="modal-btn primary" id="calibModalNext">次へ</button>
+    </div>
+    <div class="modal-error" id="calibModalError"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // 校正データ(localStorage)の自動削除リスクを減らすため、永続化をリクエストしておく
+  if (navigator.storage && navigator.storage.persist){
+    navigator.storage.persist().catch(() => { /* 拒否されても致命的ではない */ });
+  }
+
+  // PWA化: Service Workerを登録(オフライン動作・ホーム画面追加用)
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => { /* 非対応環境でも致命的ではない */ });
+    });
+  }
+
+  // ---- DOM ----
+  const dbValueEl = document.getElementById('dbValue');
+  const dbUnitEl  = document.getElementById('dbUnitLabel');
+  const maxValEl  = document.getElementById('maxVal');
+  const minValEl  = document.getElementById('minVal');
+  const startBtn  = document.getElementById('startBtn');
+  const stopBtn   = document.getElementById('stopBtn');
+  const resetBtn  = document.getElementById('resetBtn');
+  const weightingSel = document.getElementById('weighting');
+  const freqWeightingToggle = document.getElementById('freqWeightingToggle');
+  const freqWeightingBtns = Array.from(freqWeightingToggle.querySelectorAll('.seg-btn'));
+  let freqWeighting = 'A'; // 'Z' / 'A' / 'C'
+  const clipFlag  = document.getElementById('clipFlag');
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const fullscreenExitBtn = document.getElementById('fullscreenExitBtn');
+  const fullscreenRotateBtn = document.getElementById('fullscreenRotateBtn');
+  const errorBox  = document.getElementById('errorBox');
+  const octaveSvg = document.getElementById('octaveSvg');
+  const octaveSelectedEl = document.getElementById('octaveSelectedLabel');
+  const ncBadgeEl = document.getElementById('ncBadge');
+  const calibSummaryEl  = document.getElementById('calibSummary');
+  const calibStartBtn   = document.getElementById('calibStartBtn');
+  const calibModal       = document.getElementById('calibModal');
+  const calibModalProgressEl = document.getElementById('calibModalProgress');
+  const calibModalFreqEl     = document.getElementById('calibModalFreq');
+  const calibModalRawEl      = document.getElementById('calibModalRaw');
+  const calibModalInput      = document.getElementById('calibModalInput');
+  const calibModalPrevBtn    = document.getElementById('calibModalPrev');
+  const calibModalNextBtn    = document.getElementById('calibModalNext');
+  const calibModalCloseBtn   = document.getElementById('calibModalClose');
+  const calibModalErrorEl    = document.getElementById('calibModalError');
+
+  // ---- 目安オフセット(機種依存の概算値。校正前の暫定値として固定。本格校正のフォールバックに使用) ----
+  const OFFSET_DEFAULT = 100; // 0dBFS ≒ 100dB SPL 程度という大まかな仮定(根拠なし)
+  const rawOffsetDb = OFFSET_DEFAULT;
+
+  // ---- オクターブバンド定義 (IEC 61260, 1/1オクターブ) ----
+  const OCTAVE_BANDS = [
+    { f: 63,    label: '63',   lowConf: true },
+    { f: 125,   label: '125' },
+    { f: 250,   label: '250' },
+    { f: 500,   label: '500' },
+    { f: 1000,  label: '1k'  },
+    { f: 2000,  label: '2k'  },
+    { f: 4000,  label: '4k'  },
+    { f: 8000,  label: '8k'  }
+  ];
+  // 標準A特性補正値(IEC 61672-1, 該当中心周波数)。帯域ごとの単純加算で適用する。
+  const A_CORRECTION = {
+    63: -26.2, 125: -16.1, 250: -8.6, 500: -3.2,
+    1000: 0.0, 2000: 1.2, 4000: 1.0, 8000: -1.1
+  };
+  const C_CORRECTION = {
+    63: -0.8, 125: -0.2, 250: 0.0, 500: 0.0,
+    1000: 0.0, 2000: -0.2, 4000: -0.8, 8000: -3.0
+  };
+
+  // NCカーブ(Beranek 1957 / ASHRAE準拠の標準値, 63Hz〜8kHz)。Z特性選択時のみ使用。
+  const NC_LEVELS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65];
+  const NC_TABLE = {
+    15: [47, 36, 29, 22, 17, 14, 12, 11],
+    20: [51, 40, 33, 26, 22, 19, 17, 16],
+    25: [54, 44, 37, 31, 27, 24, 22, 21],
+    30: [57, 48, 41, 35, 31, 29, 28, 27],
+    35: [60, 52, 45, 40, 36, 34, 33, 32],
+    40: [64, 56, 50, 45, 41, 39, 38, 37],
+    45: [67, 60, 54, 49, 46, 44, 43, 42],
+    50: [71, 64, 58, 54, 51, 49, 48, 47],
+    55: [74, 67, 62, 58, 56, 54, 53, 52],
+    60: [77, 71, 67, 63, 61, 59, 58, 57],
+    65: [80, 75, 71, 68, 66, 64, 63, 62]
+  };
+
+  // ---- 本格校正(バンドごと, 校正元の騒音計基準)。端末localStorageに保存 ----
+  const BAND_CALIB_KEY = 'calibro_band_calib';
+  function loadBandCalib(){
+    try{
+      const parsed = JSON.parse(localStorage.getItem(BAND_CALIB_KEY));
+      if (Array.isArray(parsed.offsets) && parsed.offsets.length === OCTAVE_BANDS.length){
+        return parsed;
+      }
+    }catch(e){ /* 未保存 or 壊れている場合はデフォルトへ */ }
+    return {
+      offsets: new Array(OCTAVE_BANDS.length).fill(null),
+      timestamps: new Array(OCTAVE_BANDS.length).fill(null)
+    };
+  }
+  function saveBandCalib(){
+    try{ localStorage.setItem(BAND_CALIB_KEY, JSON.stringify({ offsets: bandOffsets, timestamps: bandCalibTimestamps })); }catch(e){ /* 致命的ではない */ }
+  }
+  const _bandCalib = loadBandCalib();
+  let bandOffsets = _bandCalib.offsets;           // 各バンドのオフセット(null=未校正)
+  let bandCalibTimestamps = _bandCalib.timestamps; // 各バンドの校正日時(ISO文字列 or null)
+
+  const CHART = { barW: 20, gap: 3, baseline: 146, top: 12, divider: 10 };
+
+  const DB_FLOOR = 0, DB_CEIL = 100; // チャートのdB表示レンジ(校正後の実SPL想定)
+  const BROADBAND_SLOTS = [
+    { key: 'A', label: 'A' },
+    { key: 'Z', label: 'Z' }
+  ];
+
+  // ---- 状態 ----
+  let audioCtx = null;
+  let micStream = null;
+  let sourceNode = null;
+  let analyserZ = null, analyserA = null, analyserC = null; // 無補正 / A特性 / C特性フィルタ後
+  let analyserFFT = null;                  // オクターブバンド計算用
+  let aFilterNode = null;                  // A特性IIRフィルタ
+  let cFilterNode = null;                  // C特性IIRフィルタ
+  let timeDataZ = null, timeDataA = null, timeDataC = null;
+  let freqDataDb = null;                   // FFT結果(dB, getFloatFrequencyData用)
+  let bandBinRanges = [];                  // バンドごとのFFTビン範囲
+  let bandMsAvg = new Array(OCTAVE_BANDS.length).fill(1e-12);
+  let bandPowerInstant = new Array(OCTAVE_BANDS.length).fill(0); // 再利用バッファ
+  let bandRects = [], bandLabels = [];     // SVG要素キャッシュ(オクターブバンド)
+  let bbRects = [], bbLabels = [];         // SVG要素キャッシュ(ブロードバンドA/Z)
+  let rafId = null;
+  let lastFrameT = 0;
+  let msAvgZ = 1e-12, msAvgA = 1e-12, msAvgC = 1e-12; // 平滑化された平均二乗値(power)
+  let maxDbZ = null, minDbZ = null;
+  let maxDbA = null, minDbA = null;
+  let maxDbC = null, minDbC = null;
+  let clipUntil = 0;     // この時刻(ms)まではCLIP表示を維持
+  let hasMeasured = false; // 一度でも計測したか(校正は「開始→停止後の保持値」でのみ許可する)
+  let lastDisplayT = 0;  // 表示更新の間引き用
+
+  const EPS = 1e-12;            // log(0)回避用の床値
+  const DISPLAY_INTERVAL_MS = 200; // 表示の更新間隔(内部の平滑化計算とは独立)
+
+
+  function showError(msg){
+    errorBox.textContent = msg;
+    errorBox.classList.add('show');
+  }
+  function clearError(){
+    errorBox.classList.remove('show');
+    errorBox.textContent = '';
+  }
+
+  function fmtDb(v){
+    if (v === null || !isFinite(v)) return '--.-';
+    return v.toFixed(1);
+  }
+
+  // ---- オクターブバンド: SVGバー初期構築(マイク開始前から1回だけ実行) ----
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const SLOT_W = CHART.barW + CHART.gap;
+  const VB_W = 320; // svgのviewBox幅と一致させる
+  const TOTAL_SLOTS = BROADBAND_SLOTS.length + OCTAVE_BANDS.length;
+  const CONTENT_W = (TOTAL_SLOTS - 1) * SLOT_W + CHART.barW + CHART.divider;
+  CHART.x0 = (VB_W - CONTENT_W) / 2; // 中央寄せ
+  const OCTAVE_X0 = CHART.x0 + BROADBAND_SLOTS.length * SLOT_W + CHART.divider;
+
+  let selected = null; // { type: 'bb'|'band', index: number } または null
+
+  function isSelected(type, index){
+    return !!selected && selected.type === type && selected.index === index;
+  }
+
+  function selectBar(type, index){
+    if (selected && selected.type === type && selected.index === index){
+      selected = null; // 同じバーを再タップで解除
+    } else {
+      selected = { type, index };
+    }
+    applySelectionHighlight();
+    updateSelectedReadout();
+  }
+
+  function applySelectionHighlight(){
+    bbRects.forEach((r, i) => {
+      const sel = isSelected('bb', i);
+      r.setAttribute('stroke', sel ? '#ffffff' : 'none');
+      r.setAttribute('stroke-width', sel ? '1.5' : '0');
+    });
+    bandRects.forEach((r, i) => {
+      const sel = isSelected('band', i);
+      r.setAttribute('stroke', sel ? '#ffffff' : 'none');
+      r.setAttribute('stroke-width', sel ? '1.5' : '0');
+    });
+  }
+
+  function makeBar(x, fill, opacity, onTap){
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', CHART.baseline);
+    rect.setAttribute('width', CHART.barW);
+    rect.setAttribute('height', 0);
+    rect.setAttribute('rx', 2);
+    rect.setAttribute('fill', fill);
+    rect.setAttribute('stroke', 'none');
+    rect.setAttribute('stroke-width', '0');
+    if (opacity) rect.setAttribute('opacity', opacity);
+    if (onTap){ rect.style.cursor = 'pointer'; rect.addEventListener('click', onTap); }
+    octaveSvg.appendChild(rect);
+    return rect;
+  }
+  function makeLabel(x, text, fill, onTap){
+    const label = document.createElementNS(SVG_NS, 'text');
+    label.setAttribute('x', x + CHART.barW / 2);
+    label.setAttribute('y', CHART.baseline + 14);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('fill', fill);
+    label.textContent = text;
+    if (onTap){ label.style.cursor = 'pointer'; label.addEventListener('click', onTap); }
+    octaveSvg.appendChild(label);
+    return label;
+  }
+  let ncPolylines = []; // NC_LEVELSと同じ順
+  let ncLabels = [];
+
+  function setupOctaveChart(){
+    // NCカーブ(バーより先に描画して背面に配置)
+    NC_LEVELS.forEach((nc, idx) => {
+      const poly = document.createElementNS(SVG_NS, 'polyline');
+      poly.setAttribute('fill', 'none');
+      poly.setAttribute('stroke', '#5b6470');
+      poly.setAttribute('stroke-width', '1');
+      poly.setAttribute('opacity', '0.35');
+      poly.setAttribute('points', '');
+      octaveSvg.appendChild(poly);
+      ncPolylines.push(poly);
+
+      // 視認性のため20/30/40/50/60だけラベルを出す(混雑回避)
+      let label = null;
+      if (nc % 20 === 0 || nc === 30 || nc === 50){
+        label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('font-size', '7');
+        label.setAttribute('fill', '#5b6470');
+        label.textContent = 'NC' + nc;
+        octaveSvg.appendChild(label);
+      }
+      ncLabels.push(label);
+    });
+
+    // ブロードバンドA/Z(常時表示、Z/Aトグルとは独立)
+    BROADBAND_SLOTS.forEach((slot, i) => {
+      const x = CHART.x0 + i * SLOT_W;
+      const onTap = () => selectBar('bb', i);
+      bbRects.push(makeBar(x, '#ffb02e', null, onTap));
+      bbLabels.push(makeLabel(x, slot.label, '#ffb02e', onTap));
+    });
+
+    // 区切り線
+    const dividerX = CHART.x0 + BROADBAND_SLOTS.length * SLOT_W + CHART.divider / 2;
+    const divLine = document.createElementNS(SVG_NS, 'line');
+    divLine.setAttribute('x1', dividerX);
+    divLine.setAttribute('y1', CHART.top);
+    divLine.setAttribute('x2', dividerX);
+    divLine.setAttribute('y2', CHART.baseline);
+    divLine.setAttribute('stroke', '#21262d');
+    divLine.setAttribute('stroke-width', '1');
+    divLine.setAttribute('stroke-dasharray', '2,2');
+    octaveSvg.appendChild(divLine);
+
+    // オクターブバンド
+    OCTAVE_BANDS.forEach((band, i) => {
+      const x = OCTAVE_X0 + i * SLOT_W;
+      const onTap = () => selectBar('band', i);
+      bandRects.push(makeBar(x, band.lowConf ? '#3a4450' : '#6fa98a', band.lowConf ? '0.6' : null, onTap));
+      bandLabels.push(makeLabel(x, band.label, '#6b7680', onTap));
+    });
+  }
+  setupOctaveChart();
+  updateNCOverlay();
+
+
+  // サンプルレート・FFTサイズが決まってから、バンドごとのビン範囲(IEC61260: center/√2 ~ center*√2)を計算
+  function computeBandBinRanges(fs, fftSize){
+    const binWidth = fs / fftSize;
+    const maxBin = fftSize / 2 - 1; // getFloatFrequencyDataの有効範囲(Nyquist未満)
+    return OCTAVE_BANDS.map(band => {
+      const lower = band.f / Math.SQRT2;
+      const upper = band.f * Math.SQRT2;
+      const startBin = Math.min(maxBin, Math.max(1, Math.ceil(lower / binWidth)));
+      const endBin = Math.min(maxBin, Math.max(startBin, Math.floor(upper / binWidth)));
+      return { startBin, endBin };
+    });
+  }
+
+  function dbToBarHeight(db){
+    const frac = Math.min(1, Math.max(0, (db - DB_FLOOR) / (DB_CEIL - DB_FLOOR)));
+    return frac * (CHART.baseline - CHART.top);
+  }
+
+  function setBar(rect, db){
+    const h = dbToBarHeight(db);
+    rect.setAttribute('y', CHART.baseline - h);
+    rect.setAttribute('height', h);
+  }
+
+  // バンドiの実効オフセット(個別校正済みならその値、なければ暫定オフセットにフォールバック)
+  function getEffectiveOffset(i){
+    return (bandOffsets[i] !== null && bandOffsets[i] !== undefined) ? bandOffsets[i] : rawOffsetDb;
+  }
+
+  // 各バンドの現在のZ特性・校正後dB値(NC判定・NCオーバーレイ共通で使用)
+  function getCalibratedBandDbZ(i){
+    const raw = 10 * Math.log10(Math.max(bandMsAvg[i], EPS));
+    return raw + getEffectiveOffset(i);
+  }
+
+  // NC判定: 各バンドが超えない最小のNCカーブをバンドごとに求め、その最大値を採用
+  function computeNC(){
+    let maxNC = null;
+    for (let i = 0; i < OCTAVE_BANDS.length; i++){
+      const v = getCalibratedBandDbZ(i);
+      let required = null;
+      for (const nc of NC_LEVELS){
+        if (NC_TABLE[nc][i] >= v){ required = nc; break; }
+      }
+      if (required === null) required = NC_LEVELS[NC_LEVELS.length - 1] + 5; // 表の上限超過
+      if (maxNC === null || required > maxNC) maxNC = required;
+    }
+    return maxNC;
+  }
+
+  // NCカーブのオーバーレイ表示を更新(Z特性選択時のみ表示)
+  function updateNCOverlay(){
+    const showNC = freqWeighting === 'Z';
+    ncBadgeEl.style.display = showNC ? 'inline-block' : 'none';
+    ncPolylines.forEach(p => p.setAttribute('opacity', showNC ? '0.35' : '0'));
+    ncLabels.forEach(l => { if (l) l.setAttribute('opacity', showNC ? '0.7' : '0'); });
+    if (!showNC) return;
+
+    // バーが校正後の実SPL値で描かれるようになったので、NCカーブは標準表の値をそのまま使うだけでよい
+    // (校正前の見た目もバーと同じ座標系なので歪まない)
+    NC_LEVELS.forEach((nc, idx) => {
+      const pts = OCTAVE_BANDS.map((band, i) => {
+        const x = OCTAVE_X0 + i * SLOT_W + CHART.barW / 2;
+        const y = CHART.baseline - dbToBarHeight(NC_TABLE[nc][i]);
+        return x + ',' + y.toFixed(1);
+      });
+      ncPolylines[idx].setAttribute('points', pts.join(' '));
+      if (ncLabels[idx]){
+        const lastX = OCTAVE_X0 + (OCTAVE_BANDS.length - 1) * SLOT_W + CHART.barW + 2;
+        const lastY = pts[pts.length - 1].split(',')[1];
+        ncLabels[idx].setAttribute('x', lastX);
+        ncLabels[idx].setAttribute('y', Number(lastY) + 2.5);
+      }
+    });
+
+    const nc = computeNC();
+    ncBadgeEl.textContent = 'NC-' + nc;
+  }
+
+  // 選択中バンドの値を計算して専用表示エリアに反映(現在のmsAvgから都度計算するので、
+  // タップ直後の即時反映にも、定期描画(renderOctaveChart)からの呼び出しにも使える)
+  const BAND_CORRECTION = { Z: null, A: A_CORRECTION, C: C_CORRECTION };
+
+  function updateSelectedReadout(){
+    if (!selected){
+      octaveSelectedEl.textContent = 'タップしてバンドを選択';
+      return;
+    }
+    let value, weightLabel, name;
+    if (selected.type === 'bb'){
+      if (selected.index === 0){
+        value = 10 * Math.log10(Math.max(msAvgA, EPS));
+        weightLabel = 'A';
+      } else {
+        value = 10 * Math.log10(Math.max(msAvgZ, EPS));
+        weightLabel = 'Z';
+      }
+      name = 'オーバーオール';
+      value += rawOffsetDb;
+    } else {
+      const i = selected.index;
+      value = 10 * Math.log10(Math.max(bandMsAvg[i], EPS));
+      const corrTable = BAND_CORRECTION[freqWeighting];
+      if (corrTable) value += corrTable[OCTAVE_BANDS[i].f];
+      weightLabel = freqWeighting;
+      name = OCTAVE_BANDS[i].label + 'Hz';
+      value += getEffectiveOffset(i);
+    }
+    octaveSelectedEl.textContent = name + ': ' + value.toFixed(1) + ' dB(' + weightLabel + ')';
+  }
+
+  function renderOctaveChart(dbZ, dbA){
+    // ブロードバンドA/Z(Z/Aトグルに関わらず常に両方表示。実SPL換算値で描画)
+    setBar(bbRects[0], dbA + rawOffsetDb);
+    setBar(bbRects[1], dbZ + rawOffsetDb);
+
+    const corrTable = BAND_CORRECTION[freqWeighting];
+    for (let i = 0; i < OCTAVE_BANDS.length; i++){
+      let db = 10 * Math.log10(Math.max(bandMsAvg[i], EPS));
+      if (corrTable) db += corrTable[OCTAVE_BANDS[i].f];
+      db += getEffectiveOffset(i);
+      setBar(bandRects[i], db);
+    }
+
+    updateSelectedReadout();
+    updateNCOverlay();
+  }
+
+
+
+  function getTau(){
+    return weightingSel.value === 'slow' ? 1.0 : 0.125; // IEC 61672 Slow/Fast相当
+  }
+
+  function updateUnitLabel(){
+    dbUnitEl.textContent = 'dB(' + freqWeighting + ')';
+  }
+
+  // メインのdB値・MAX/MINを現在のfreqWeightingに基づいて再計算して表示に反映する。
+  // loop()からの毎フレーム更新だけでなく、停止後に重み付けを切り替えた際にも
+  // (保持された値を正しい重み付けで出し直すために)呼ぶ。
+  function updateMainReadout(){
+    const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+    const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+    const dbC = 10 * Math.log10(Math.max(msAvgC, EPS));
+    const dbByWeight  = { Z: dbZ, A: dbA, C: dbC };
+    const maxByWeight = { Z: maxDbZ, A: maxDbA, C: maxDbC };
+    const minByWeight = { Z: minDbZ, A: minDbA, C: minDbC };
+
+    dbValueEl.textContent = fmtDb(dbByWeight[freqWeighting] + rawOffsetDb);
+
+    const maxRaw = maxByWeight[freqWeighting];
+    const minRaw = minByWeight[freqWeighting];
+    maxValEl.textContent = (maxRaw === null) ? '--.-' : fmtDb(maxRaw + rawOffsetDb);
+    minValEl.textContent = (minRaw === null) ? '--.-' : fmtDb(minRaw + rawOffsetDb);
+  }
+
+  // ---- A特性(dBA)フィルタ係数の生成 ----
+  // IEC 61672のアナログA特性プロトタイプ(極: f1,f2,f3,f4 / 原点に4重零点)を
+  // マッチドZ変換でサンプルレート依存のIIR係数に変換する。
+  // 単純な双一次変換も試したが、16kHz付近(Nyquist/2に近い12194Hzの極の影響)で
+  // 規格値との誤差が-6dBを超えたため、より高域精度の良いマッチドZ変換を採用している。
+  // 1kHzでのゲインを実測して0dBに正規化(定数の丸め誤差を排除)。
+  // 検証結果(fs=48000Hz, 規格との差分): 125Hz~4kHzは±0.1dB程度、8kHzで+0.65dB、
+  // 16kHzで+2.75dB。マイク自体の未校正誤差に比べれば実用上は許容範囲だが、
+  // 将来オクターブバンド化する際は各帯域ごとに再設計したほうが精度が出る見込み。
+  function polyMul(p, q){
+    const result = new Array(p.length + q.length - 1).fill(0);
+    for (let i = 0; i < p.length; i++){
+      for (let j = 0; j < q.length; j++){
+        result[i + j] += p[i] * q[j];
+      }
+    }
+    return result;
+  }
+
+  function magnitudeAt(b, a, freq, fs){
+    const theta = 2 * Math.PI * freq / fs;
+    let numRe = 0, numIm = 0, denRe = 0, denIm = 0;
+    for (let k = 0; k < b.length; k++){
+      numRe += b[k] * Math.cos(-theta * k);
+      numIm += b[k] * Math.sin(-theta * k);
+    }
+    for (let k = 0; k < a.length; k++){
+      denRe += a[k] * Math.cos(-theta * k);
+      denIm += a[k] * Math.sin(-theta * k);
+    }
+    return Math.sqrt(numRe * numRe + numIm * numIm) / Math.sqrt(denRe * denRe + denIm * denIm);
+  }
+
+  function buildAWeightingCoeffs(fs){
+    const f1 = 20.598997, f2 = 107.65265, f3 = 737.86223, f4 = 12194.217;
+    const w1 = 2 * Math.PI * f1, w2 = 2 * Math.PI * f2, w3 = 2 * Math.PI * f3, w4 = 2 * Math.PI * f4;
+    const T = 1 / fs;
+    const poles = [w1, w1, w2, w3, w4, w4]; // f1, f4は2重極
+
+    // 分母: 各極 s=-ω を z = e^(-ωT) へ直接マッピング → Π(1 - e^(-ωT)z^-1)
+    let aPoly = [1];
+    for (const w of poles){
+      const p = Math.exp(-w * T);
+      aPoly = polyMul(aPoly, [1, -p]);
+    }
+
+    // 分子: 原点の4重零点 → z=1 の4重零点 → (1-z^-1)^4
+    let bPoly = [1];
+    for (let i = 0; i < 4; i++) bPoly = polyMul(bPoly, [1, -1]);
+
+    // 1kHzで0dBになるよう正規化
+    const mag1k = magnitudeAt(bPoly, aPoly, 1000, fs);
+    bPoly = bPoly.map(c => c / mag1k);
+
+    return { b: bPoly, a: aPoly };
+  }
+
+  // C特性: f1, f4のみ(各2重極)、分子は原点の2重零点(検算済み: 8kHzまで±0.7dB程度)
+  function buildCWeightingCoeffs(fs){
+    const f1 = 20.598997, f4 = 12194.217;
+    const w1 = 2 * Math.PI * f1, w4 = 2 * Math.PI * f4;
+    const T = 1 / fs;
+    const poles = [w1, w1, w4, w4];
+
+    let aPoly = [1];
+    for (const w of poles){
+      const p = Math.exp(-w * T);
+      aPoly = polyMul(aPoly, [1, -p]);
+    }
+
+    let bPoly = [1];
+    for (let i = 0; i < 2; i++) bPoly = polyMul(bPoly, [1, -1]);
+
+    const mag1k = magnitudeAt(bPoly, aPoly, 1000, fs);
+    bPoly = bPoly.map(c => c / mag1k);
+
+    return { b: bPoly, a: aPoly };
+  }
+
+  // 現在のAnalyserバッファから平均二乗(MS)を計算
+  function getBlockMS(analyserNode, dataArray){
+    analyserNode.getFloatTimeDomainData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++){
+      sum += dataArray[i] * dataArray[i];
+    }
+    return sum / dataArray.length;
+  }
+
+  function loop(now){
+    if (!lastFrameT) lastFrameT = now;
+    const dt = Math.max(0, (now - lastFrameT) / 1000);
+    lastFrameT = now;
+
+    // クリップ検知は無補正(Z)の生信号で行う(ADCクリップそのものを見るため)
+    analyserZ.getFloatTimeDomainData(timeDataZ);
+    let sumZ = 0, clipped = false;
+    for (let i = 0; i < timeDataZ.length; i++){
+      const v = timeDataZ[i];
+      sumZ += v * v;
+      if (Math.abs(v) > 0.98) clipped = true;
+    }
+    const msZ = sumZ / timeDataZ.length;
+    const msA = getBlockMS(analyserA, timeDataA);
+    const msC = getBlockMS(analyserC, timeDataC);
+
+    const tau = getTau();
+    const alpha = dt > 0 ? (1 - Math.exp(-dt / tau)) : 0;
+    msAvgZ = msAvgZ + (msZ - msAvgZ) * alpha;
+    msAvgA = msAvgA + (msA - msAvgA) * alpha;
+    msAvgC = msAvgC + (msC - msAvgC) * alpha;
+
+    // オクターブバンド: FFTからバンドごとの平均二乗値を集計し、同じ時間重み付けで平滑化
+    analyserFFT.getFloatFrequencyData(freqDataDb);
+    for (let bI = 0; bI < OCTAVE_BANDS.length; bI++){
+      const range = bandBinRanges[bI];
+      let sum = 0;
+      for (let k = range.startBin; k <= range.endBin; k++){
+        const mag = Math.pow(10, freqDataDb[k] / 20);
+        sum += mag * mag;
+      }
+      bandPowerInstant[bI] = sum;
+    }
+    for (let bI = 0; bI < OCTAVE_BANDS.length; bI++){
+      bandMsAvg[bI] = bandMsAvg[bI] + (bandPowerInstant[bI] - bandMsAvg[bI]) * alpha;
+    }
+
+    const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+    const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+    const dbC = 10 * Math.log10(Math.max(msAvgC, EPS));
+
+    // 内部の最大/最小値は毎フレーム正確に追跡(ピークを取りこぼさないため)
+    if (maxDbZ === null || dbZ > maxDbZ) maxDbZ = dbZ;
+    if (minDbZ === null || dbZ < minDbZ) minDbZ = dbZ;
+    if (maxDbA === null || dbA > maxDbA) maxDbA = dbA;
+    if (minDbA === null || dbA < minDbA) minDbA = dbA;
+    if (maxDbC === null || dbC > maxDbC) maxDbC = dbC;
+    if (minDbC === null || dbC < minDbC) minDbC = dbC;
+
+    // 画面表示は見やすさのため一定間隔ごとに更新
+    if (now - lastDisplayT >= DISPLAY_INTERVAL_MS){
+      updateMainReadout();
+      dbValueEl.classList.add('live');
+      renderOctaveChart(dbZ, dbA);
+      lastDisplayT = now;
+    }
+
+
+    if (clipped) clipUntil = now + 800; // クリップ表示を0.8秒保持
+    clipFlag.classList.toggle('active', now < clipUntil);
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+
+  async function start(){
+    clearError();
+    try{
+      const constraints = {
+        audio: {
+          autoGainControl: false,
+          noiseSuppression: false,
+          echoCancellation: false,
+          channelCount: 1
+        }
+      };
+      micStream = await navigator.mediaDevices.getUserMedia(constraints);
+      hasMeasured = true;
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+      sourceNode = audioCtx.createMediaStreamSource(micStream);
+
+      // Zチャンネル(無補正)
+      analyserZ = audioCtx.createAnalyser();
+      analyserZ.fftSize = 2048;
+      analyserZ.smoothingTimeConstant = 0; // 自前で平滑化するためAnalyser側は無効化
+      timeDataZ = new Float32Array(analyserZ.fftSize);
+      sourceNode.connect(analyserZ);
+
+      // Aチャンネル(A特性IIRフィルタ通過後)
+      const coeffs = buildAWeightingCoeffs(audioCtx.sampleRate);
+      aFilterNode = audioCtx.createIIRFilter(coeffs.b, coeffs.a);
+      analyserA = audioCtx.createAnalyser();
+      analyserA.fftSize = 2048;
+      analyserA.smoothingTimeConstant = 0;
+      timeDataA = new Float32Array(analyserA.fftSize);
+      sourceNode.connect(aFilterNode);
+      aFilterNode.connect(analyserA);
+
+      // Cチャンネル(C特性IIRフィルタ通過後)
+      const coeffsC = buildCWeightingCoeffs(audioCtx.sampleRate);
+      cFilterNode = audioCtx.createIIRFilter(coeffsC.b, coeffsC.a);
+      analyserC = audioCtx.createAnalyser();
+      analyserC.fftSize = 2048;
+      analyserC.smoothingTimeConstant = 0;
+      timeDataC = new Float32Array(analyserC.fftSize);
+      sourceNode.connect(cFilterNode);
+      cFilterNode.connect(analyserC);
+      // 注意: どちらもdestinationには接続しない(ハウリング防止。表示専用)
+
+      // オクターブバンド計算用(生信号からFFT)
+      analyserFFT = audioCtx.createAnalyser();
+      analyserFFT.fftSize = 4096;
+      analyserFFT.smoothingTimeConstant = 0;
+      analyserFFT.minDecibels = -130;
+      analyserFFT.maxDecibels = 0;
+      freqDataDb = new Float32Array(analyserFFT.frequencyBinCount);
+      sourceNode.connect(analyserFFT);
+      bandBinRanges = computeBandBinRanges(audioCtx.sampleRate, analyserFFT.fftSize);
+      bandMsAvg = new Array(OCTAVE_BANDS.length).fill(1e-12);
+
+      msAvgZ = 1e-12; msAvgA = 1e-12; msAvgC = 1e-12;
+      lastFrameT = 0;
+      lastDisplayT = 0;
+      maxDbZ = null; minDbZ = null;
+      maxDbA = null; minDbA = null;
+      maxDbC = null; minDbC = null;
+      maxValEl.textContent = '--.-';
+      minValEl.textContent = '--.-';
+      updateUnitLabel();
+
+      rafId = requestAnimationFrame(loop);
+
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      weightingSel.disabled = false;
+
+
+    }catch(err){
+      console.error(err);
+      let msg = 'マイクの取得に失敗しました: ' + (err.message || err.name || err);
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost'){
+        msg += '\n(HTTPSまたはlocalhostでの実行が必要です)';
+      }
+      showError(msg);
+      stop();
+    }
+  }
+
+  function stop(){
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    lastFrameT = 0;
+
+    if (sourceNode) { try{ sourceNode.disconnect(); }catch(e){} sourceNode = null; }
+    analyserZ = null; analyserA = null; analyserC = null; aFilterNode = null; cFilterNode = null; analyserFFT = null;
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx) { try{ audioCtx.close(); }catch(e){} audioCtx = null; }
+
+    dbValueEl.classList.remove('live');
+    clipFlag.classList.remove('active');
+    // オクターブバンドのグラフ・選択状態は停止時もそのまま保持する(resetOctaveChartは呼ばない)
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+
+  function resetStats(){
+    maxDbZ = null; minDbZ = null;
+    maxDbA = null; minDbA = null;
+    maxDbC = null; minDbC = null;
+    maxValEl.textContent = '--.-';
+    minValEl.textContent = '--.-';
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+  resetBtn.addEventListener('click', resetStats);
+
+  freqWeightingBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      freqWeighting = btn.dataset.value;
+      freqWeightingBtns.forEach(b => b.classList.toggle('active', b === btn));
+      updateUnitLabel();
+      updateMainReadout();
+      const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+      const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+      renderOctaveChart(dbZ, dbA); // バー自体も再描画(内部でupdateSelectedReadout/updateNCOverlayも呼ばれる)
+    });
+  });
+
+  // ---- 校正ウィザード(63Hz→8kHzの順で連続入力するモーダル) ----
+  let calibModalIndex = 0;
+  let calibModalValues = new Array(OCTAVE_BANDS.length).fill('');
+
+  function updateCalibSummary(){
+    const calibratedCount = bandOffsets.filter(v => v !== null && v !== undefined).length;
+    calibStartBtn.classList.toggle('subtle', calibratedCount > 0);
+    if (calibratedCount === 0){
+      calibSummaryEl.textContent = '未校正';
+      return;
+    }
+    const tsList = bandCalibTimestamps.filter(t => !!t).map(t => new Date(t).getTime());
+    const latestText = tsList.length ? new Date(Math.max(...tsList)).toLocaleString('ja-JP') : '不明';
+    calibSummaryEl.textContent = calibratedCount + ' / ' + OCTAVE_BANDS.length + 'バンド校正済み ・ 最終更新 ' + latestText;
+  }
+  updateCalibSummary();
+
+  function renderCalibModalStep(){
+    const band = OCTAVE_BANDS[calibModalIndex];
+    calibModalProgressEl.textContent = (calibModalIndex + 1) + ' / ' + OCTAVE_BANDS.length;
+    calibModalFreqEl.textContent = band.label + 'Hz';
+    const rawDb = 10 * Math.log10(Math.max(bandMsAvg[calibModalIndex], EPS));
+    calibModalRawEl.textContent = fmtDb(rawDb);
+    calibModalInput.value = calibModalValues[calibModalIndex];
+    calibModalErrorEl.textContent = '';
+    calibModalPrevBtn.disabled = (calibModalIndex === 0);
+    calibModalNextBtn.textContent = (calibModalIndex === OCTAVE_BANDS.length - 1) ? '完了' : '次へ';
+    calibModalInput.focus();
+  }
+
+  function openCalibModal(){
+    if (audioCtx){
+      stop(); // 動作中なら自動的に停止し、その保持値で校正モードに入る
+    }
+    if (!hasMeasured){
+      calibSummaryEl.textContent = '一度マイクを開始・停止してから校正してください';
+      return;
+    }
+    calibModalIndex = 0;
+    calibModalValues = new Array(OCTAVE_BANDS.length).fill('');
+    calibModal.style.display = 'flex';
+    renderCalibModalStep();
+  }
+
+  function closeCalibModal(){
+    calibModal.style.display = 'none';
+    updateCalibSummary();
+    const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+    const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+    renderOctaveChart(dbZ, dbA); // バーの高さも新しいオフセットで再描画(updateSelectedReadout/updateNCOverlayも内部で呼ばれる)
+  }
+
+  function commitCalibModalStep(){
+    const refValue = parseFloat(calibModalInput.value);
+    if (!isFinite(refValue)){
+      calibModalErrorEl.textContent = '数値を入力してください';
+      return false;
+    }
+    calibModalValues[calibModalIndex] = refValue;
+    const rawDb = 10 * Math.log10(Math.max(bandMsAvg[calibModalIndex], EPS));
+    bandOffsets[calibModalIndex] = refValue - rawDb;
+    bandCalibTimestamps[calibModalIndex] = new Date().toISOString();
+    saveBandCalib();
+    return true;
+  }
+
+  calibStartBtn.addEventListener('click', openCalibModal);
+
+  calibModalNextBtn.addEventListener('click', () => {
+    if (!commitCalibModalStep()) return;
+    if (calibModalIndex < OCTAVE_BANDS.length - 1){
+      calibModalIndex++;
+      renderCalibModalStep();
+    } else {
+      closeCalibModal();
+    }
+  });
+
+  calibModalPrevBtn.addEventListener('click', () => {
+    if (calibModalIndex > 0){
+      calibModalIndex--;
+      renderCalibModalStep();
+    }
+  });
+
+  calibModalCloseBtn.addEventListener('click', closeCalibModal);
+
+  calibModalInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') calibModalNextBtn.click();
+  });
+
+  // ---- 全画面表示モード(数値のみを大きく表示) ----
+  function enterFullscreenMode(){
+    document.body.classList.add('fullscreen-mode');
+    if (document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(() => { /* 拒否されてもCSS側の全画面表示は機能する */ });
+    }
+  }
+  function exitFullscreenMode(){
+    document.body.classList.remove('fullscreen-mode');
+    if (document.fullscreenElement && document.exitFullscreen){
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+  fullscreenBtn.addEventListener('click', enterFullscreenMode);
+  fullscreenExitBtn.addEventListener('click', exitFullscreenMode);
+  fullscreenRotateBtn.addEventListener('click', () => {
+    document.body.classList.toggle('rotated');
+  });
+  document.addEventListener('fullscreenchange', () => {
+    // 端末の戻る操作等でブラウザ側の全画面だけ解除された場合もCSS側を追従させる
+    if (!document.fullscreenElement){
+      document.body.classList.remove('fullscreen-mode');
+    }
+  });
+
+  window.addEventListener('beforeunload', stop);
+
+
+})();
+</script>
+</body>
+</html>
