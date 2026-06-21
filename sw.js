@@ -3,14 +3,14 @@
 // 開発中にindex.htmlを頻繁に更新する想定なので、古いキャッシュに固定されないよう
 // あえて「キャッシュ優先」ではなく「ネットワーク優先」にしている。
 
-const CACHE_NAME = 'calibro-v1';
+const CACHE_NAME = 'calibro-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-512-maskable.png'
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-512-maskable.png'
 ];
 
 self.addEventListener('install', (event) => {

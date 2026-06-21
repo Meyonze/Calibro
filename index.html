@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>Calibro - 簡易騒音計</title>
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#0b0e11">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -374,6 +374,64 @@
     text-align: center;
     line-height: 1.5;
   }
+  .calib-subactions{
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .calib-link-btn{
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .calib-link-btn.danger{
+    color: #a85a5b;
+  }
+
+  .history-empty{
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 20px 0;
+  }
+  .history-entry{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .history-entry:last-child{ border-bottom: none; }
+  .history-entry-date{
+    font-size: 13px;
+    color: var(--text);
+    font-family: "SF Mono","Roboto Mono",monospace;
+  }
+  .history-entry-count{
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .history-entry-load-btn{
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--ok);
+    color: var(--ok);
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 7px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .history-entry-load-btn:active{ transform: scale(0.96); }
 
   .modal-overlay{
     position: fixed;
@@ -663,6 +721,10 @@
     <div class="calib-hint">校正元の騒音計と同時に「停止」して、保持された値で校正してください</div>
     <div class="calib-status" id="calibSummary">未校正</div>
     <button type="button" class="calib-apply-btn" id="calibStartBtn">校正を開始する</button>
+    <div class="calib-subactions">
+      <button type="button" class="calib-link-btn" id="calibHistoryBtn">校正履歴</button>
+      <button type="button" class="calib-link-btn danger" id="calibResetBtn">校正をリセット</button>
+    </div>
   </div>
 
   <div class="error-box" id="errorBox"></div>
@@ -693,6 +755,16 @@
       <button type="button" class="modal-btn primary" id="calibModalNext">次へ</button>
     </div>
     <div class="modal-error" id="calibModalError"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="historyModal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-progress">校正履歴</span>
+      <button type="button" class="modal-close-btn" id="historyModalClose">✕</button>
+    </div>
+    <div id="historyList"></div>
   </div>
 </div>
 
@@ -734,6 +806,11 @@
   const ncBadgeEl = document.getElementById('ncBadge');
   const calibSummaryEl  = document.getElementById('calibSummary');
   const calibStartBtn   = document.getElementById('calibStartBtn');
+  const calibHistoryBtn = document.getElementById('calibHistoryBtn');
+  const calibResetBtn   = document.getElementById('calibResetBtn');
+  const historyModal      = document.getElementById('historyModal');
+  const historyModalClose = document.getElementById('historyModalClose');
+  const historyListEl     = document.getElementById('historyList');
   const calibModal       = document.getElementById('calibModal');
   const calibModalProgressEl = document.getElementById('calibModalProgress');
   const calibModalFreqEl     = document.getElementById('calibModalFreq');
@@ -805,6 +882,93 @@
   const _bandCalib = loadBandCalib();
   let bandOffsets = _bandCalib.offsets;           // 各バンドのオフセット(null=未校正)
   let bandCalibTimestamps = _bandCalib.timestamps; // 各バンドの校正日時(ISO文字列 or null)
+
+  // ---- 校正履歴(localStorageにJSON配列として保存。ファイル出力はしない) ----
+  const HISTORY_KEY = 'calibro_calib_history';
+  const HISTORY_MAX = 20; // 古いものから自動的に切り捨て
+
+  function loadHistory(){
+    try{
+      const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY));
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(e){ return []; }
+  }
+  function saveHistoryList(list){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); }catch(e){ /* 致命的ではない */ }
+  }
+  function pushHistory(){
+    if (!bandOffsets.some(v => v !== null && v !== undefined)) return; // 何も校正してなければ記録しない
+    const list = loadHistory();
+    list.unshift({
+      timestamp: new Date().toISOString(),
+      offsets: bandOffsets.slice()
+    });
+    if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;
+    saveHistoryList(list);
+  }
+
+  function renderHistoryList(){
+    const list = loadHistory();
+    if (list.length === 0){
+      historyListEl.innerHTML = '<div class="history-empty">まだ履歴がありません</div>';
+      return;
+    }
+    historyListEl.innerHTML = '';
+    list.forEach((entry, idx) => {
+      const count = entry.offsets.filter(v => v !== null && v !== undefined).length;
+
+      const row = document.createElement('div');
+      row.className = 'history-entry';
+
+      const info = document.createElement('div');
+      const dateEl = document.createElement('div');
+      dateEl.className = 'history-entry-date';
+      dateEl.textContent = new Date(entry.timestamp).toLocaleString('ja-JP');
+      const countEl = document.createElement('div');
+      countEl.className = 'history-entry-count';
+      countEl.textContent = count + ' / ' + OCTAVE_BANDS.length + 'バンド校正済み';
+      info.appendChild(dateEl);
+      info.appendChild(countEl);
+
+      const loadBtn = document.createElement('button');
+      loadBtn.type = 'button';
+      loadBtn.className = 'history-entry-load-btn';
+      loadBtn.textContent = '復元';
+      loadBtn.addEventListener('click', () => restoreHistory(idx));
+
+      row.appendChild(info);
+      row.appendChild(loadBtn);
+      historyListEl.appendChild(row);
+    });
+  }
+
+  function restoreHistory(idx){
+    const list = loadHistory();
+    const entry = list[idx];
+    if (!entry) return;
+    if (!confirm('この時点の校正データを復元しますか?\n現在の校正データは上書きされます。')) return;
+
+    bandOffsets = entry.offsets.slice();
+    bandCalibTimestamps = entry.offsets.map(() => entry.timestamp);
+    saveBandCalib();
+    updateCalibSummary();
+    const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+    const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+    renderOctaveChart(dbZ, dbA);
+    historyModal.style.display = 'none';
+  }
+
+  function resetCalibration(){
+    if (!confirm('校正データをすべてリセットしますか?\nこの操作は元に戻せません(リセット前の状態は校正履歴から復元できます)。')) return;
+    pushHistory(); // リセット直前の状態を保険として履歴に残す
+    bandOffsets = new Array(OCTAVE_BANDS.length).fill(null);
+    bandCalibTimestamps = new Array(OCTAVE_BANDS.length).fill(null);
+    saveBandCalib();
+    updateCalibSummary();
+    const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
+    const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
+    renderOctaveChart(dbZ, dbA);
+  }
 
   const CHART = { barW: 20, gap: 3, baseline: 146, top: 12, divider: 10 };
 
@@ -1467,6 +1631,7 @@
 
   function closeCalibModal(){
     calibModal.style.display = 'none';
+    pushHistory(); // この時点のbandOffsetsを履歴に1件記録
     updateCalibSummary();
     const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
     const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
@@ -1488,6 +1653,14 @@
   }
 
   calibStartBtn.addEventListener('click', openCalibModal);
+  calibHistoryBtn.addEventListener('click', () => {
+    renderHistoryList();
+    historyModal.style.display = 'flex';
+  });
+  calibResetBtn.addEventListener('click', resetCalibration);
+  historyModalClose.addEventListener('click', () => {
+    historyModal.style.display = 'none';
+  });
 
   calibModalNextBtn.addEventListener('click', () => {
     if (!commitCalibModalStep()) return;
