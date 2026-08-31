@@ -1253,11 +1253,11 @@
         value = 10 * Math.log10(Math.max(msAvgA, EPS));
         weightLabel = 'A';
       } else {
-        value = 10 * Math.log10(Math.max(msAvgZ, EPS));
+        value = getZOverallDb();
         weightLabel = 'Z';
       }
       name = 'オーバーオール';
-      value += rawOffsetDb;
+      // valueはgetZOverallDb()が既にSPL換算済みなので rawOffsetDb を足さない
     } else {
       const i = selected.index;
       value = 10 * Math.log10(Math.max(bandMsAvg[i], EPS));
