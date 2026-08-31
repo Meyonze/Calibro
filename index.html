@@ -1180,6 +1180,20 @@
     return raw + getEffectiveOffset(i);
   }
 
+  // Zオーバーオール: バンドが1本でも校正済みなら、校正済み8バンドのエネルギー合算で計算。
+  // 未校正の場合は従来の固定オフセット(rawOffsetDb)方式にフォールバック。
+  function getZOverallDb(){
+    const hasAnyCalib = bandOffsets.some(v => v !== null && v !== undefined);
+    if (!hasAnyCalib){
+      return 10 * Math.log10(Math.max(msAvgZ, EPS)) + rawOffsetDb;
+    }
+    let sumPow = 0;
+    for (let i = 0; i < OCTAVE_BANDS.length; i++){
+      sumPow += Math.pow(10, getCalibratedBandDbZ(i) / 10);
+    }
+    return 10 * Math.log10(Math.max(sumPow, 1e-30));
+  }
+
   // NC判定: 各バンドが超えない最小のNCカーブをバンドごとに求め、その最大値を採用
   function computeNC(){
     let maxNC = null;
@@ -1259,7 +1273,7 @@
   function renderOctaveChart(dbZ, dbA){
     // ブロードバンドA/Z(Z/Aトグルに関わらず常に両方表示。実SPL換算値で描画)
     setBar(bbRects[0], dbA + rawOffsetDb);
-    setBar(bbRects[1], dbZ + rawOffsetDb);
+    setBar(bbRects[1], getZOverallDb());
 
     const corrTable = BAND_CORRECTION[freqWeighting];
     for (let i = 0; i < OCTAVE_BANDS.length; i++){
@@ -1290,16 +1304,19 @@
     const dbZ = 10 * Math.log10(Math.max(msAvgZ, EPS));
     const dbA = 10 * Math.log10(Math.max(msAvgA, EPS));
     const dbC = 10 * Math.log10(Math.max(msAvgC, EPS));
-    const dbByWeight  = { Z: dbZ, A: dbA, C: dbC };
+    // Zオーバーオールはバンド合算値を優先(校正済みの場合)
+    const zOverall = getZOverallDb();
+    const dbByWeight  = { Z: zOverall, A: dbA + rawOffsetDb, C: dbC + rawOffsetDb };
     const maxByWeight = { Z: maxDbZ, A: maxDbA, C: maxDbC };
     const minByWeight = { Z: minDbZ, A: minDbA, C: minDbC };
 
-    dbValueEl.textContent = fmtDb(dbByWeight[freqWeighting] + rawOffsetDb);
+    dbValueEl.textContent = fmtDb(dbByWeight[freqWeighting]);
 
     const maxRaw = maxByWeight[freqWeighting];
     const minRaw = minByWeight[freqWeighting];
-    maxValEl.textContent = (maxRaw === null) ? '--.-' : fmtDb(maxRaw + rawOffsetDb);
-    minValEl.textContent = (minRaw === null) ? '--.-' : fmtDb(minRaw + rawOffsetDb);
+    const offsetForWeight = (freqWeighting === 'Z') ? 0 : rawOffsetDb;
+    maxValEl.textContent = (maxRaw === null) ? '--.-' : fmtDb(maxRaw + offsetForWeight);
+    minValEl.textContent = (minRaw === null) ? '--.-' : fmtDb(minRaw + offsetForWeight);
   }
 
   // ---- A特性(dBA)フィルタ係数の生成 ----
